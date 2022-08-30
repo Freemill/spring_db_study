@@ -39,7 +39,7 @@ public class MemberServiceV2 {
         Member fromMember = memberRepository.findById(con, fromId);
         Member toMember = memberRepository.findById(con, toId);
 
-        memberRepository.update(fromId, fromMember.getMoney() - money);
+        memberRepository    .update(fromId, fromMember.getMoney() - money);
         validation(toMember);
         memberRepository.update(toId, toMember.getMoney() + money);
     }
