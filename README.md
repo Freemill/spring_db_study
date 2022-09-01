@@ -24,7 +24,7 @@ insert into member(member_id, money) values ('hi2', 20000);
 
 
 
-##### JDBC 등장 이유
+##### JDBC 등장 이유 :facepunch:
 
 애플리케이션을 개발할 때 중요한 데이터는 대부분 데이터베이스에 보관한다.
 
@@ -36,7 +36,7 @@ insert into member(member_id, money) values ('hi2', 20000);
 
 
 
-##### "애플리케이션 서버와 DB - 일반적인 사용법"
+##### "애플리케이션 서버와 DB - 일반적인 사용법" :facepunch:
 
 ![image](https://user-images.githubusercontent.com/76586084/187841808-8ab57b57-c9a0-46e1-979e-9ff7a68d9d15.png)
 
@@ -46,7 +46,7 @@ insert into member(member_id, money) values ('hi2', 20000);
 
 
 
-##### "애플리케이션 서버와 DB - DB 변경"
+##### "애플리케이션 서버와 DB - DB 변경" :facepunch:
 
 ![image](https://user-images.githubusercontent.com/76586084/187842238-fa0d84fa-4544-4156-8902-c5e8ede1fd56.png)
 
@@ -65,13 +65,13 @@ insert into member(member_id, money) values ('hi2', 20000);
 
 
 
-##### JDBC 표준 인터페이스
+##### JDBC 표준 인터페이스 :facepunch:
 
 > JDBC(Java Database Connectivity)는 자바에서 데이터베이스에 접속할 수 있도록 하는 자바 API이다. JDBC는 데이터베이스에서 자료를 쿼리하거나 업데이트 하는 방법을 제공한다.
 
 
 
-##### "JDBC 표준 인터페이스"
+##### "JDBC 표준 인터페이스" :facepunch:
 
 ![image](https://user-images.githubusercontent.com/76586084/187845404-544aec71-31db-4d00-8850-26b08e1cb6a3.png)
 
@@ -92,13 +92,13 @@ ex) MySQL DB에 접근할 수 있는것은 MySQL JDBC 드라이버라고 하고,
 
 ## JDBC와 최신 데이터 접근 기술
 
-##### "JDBC 직접 사용"
+##### "JDBC 직접 사용" :facepunch:
 
 ![image](https://user-images.githubusercontent.com/76586084/187847780-baeb8627-baea-48a3-b6ef-8043550f17cd.png)
 
 
 
-##### "SQL Mapper"
+##### "SQL Mapper" :facepunch:
 
 ![image-20220901153912430](C:\Users\user\AppData\Roaming\Typora\typora-user-images\image-20220901153912430.png)
 
@@ -111,7 +111,7 @@ ex) MySQL DB에 접근할 수 있는것은 MySQL JDBC 드라이버라고 하고,
 
 
 
-##### "ORM 기술"
+##### "ORM 기술" :facepunch:
 
 ![image](https://user-images.githubusercontent.com/76586084/187849244-32905a2c-783d-426b-beeb-70c7505b44ba.png)
 
@@ -137,7 +137,7 @@ ORM기술은 SQL 자체를 작성하지 않아도 되어사 개발 생산성이 
 
 
 
-##### "ConnectionConst"
+##### "ConnectionConst" :facepunch:
 
 ```java
 public abstract class ConnectionConst{
@@ -153,7 +153,7 @@ public abstract class ConnectionConst{
 
 JDBC를 사용해서 실제 데이터베이스에 연결하는 코드를작성해보자.
 
-##### "DBConnectionUtil"
+##### "DBConnectionUtil" :facepunch:
 
 ```java
 @Slf4j
@@ -173,7 +173,7 @@ public class DBConnectionUtil {
 
 
 
-##### "DBConnectionUtilTest"
+##### "DBConnectionUtilTest" :facepunch:
 
 ```java
 @Slf4j
@@ -201,7 +201,7 @@ public class DBConnectionUtilTest {
 
 지금까지 코드로 확인해본 과정을 좀 더 자세히 알아보자
 
-##### "JDBC 커넥션 인터페이스와 구현"
+##### "JDBC 커넥션 인터페이스와 구현" :facepunch:
 
 ![image](https://user-images.githubusercontent.com/76586084/187861781-e1eb983f-28e2-4f42-a029-8ea1b27165f0.png)
 
@@ -210,7 +210,7 @@ public class DBConnectionUtilTest {
 
 
 
-##### "DriverManager 커넥션 요청 흐름"
+##### "DriverManager 커넥션 요청 흐름" :facepunch: 
 
 ![image-20220901171220956](C:\Users\user\AppData\Roaming\Typora\typora-user-images\image-20220901171220956.png)
 
@@ -218,7 +218,7 @@ JDBC가 제공하는 ***```DriverManger```*** 는 라이브러리에 등록된 D
 
 
 
-1. 애플리케이션 로직에서 커넥션이 필요하면 ***```DriverManager.getConnection()```*** 을 호출한다.
+1. 애플리케이션 로직에서 커넥션이 필요하면 ***```DriverManager.getConnection()```*** 을 호출한다. :postal_horn:
 2. ***```DriverManeger```*** 는 라이브러리에 등록된 드라이버 목록을 자동으로 인식한다. 이 드라이버들에게 순서대로 다음 정보를 넘겨서 커넥션을 획득할 수 있는지 확인한다.
    - URL : 예) ***```jdbc:h2:tcp://localhost/~/test```***-
    - 이름, 비밀번호 등 접속에 필요한 추가 정보
@@ -231,7 +231,7 @@ JDBC가 제공하는 ***```DriverManger```*** 는 라이브러리에 등록된 D
 
 ## JDBC 개발 - 등록
 
-##### "Member"
+##### "Member" :facepunch:
 
 ```java
 @Data
@@ -251,7 +251,7 @@ public class Member {
 
 
 
-##### "MemberRepositoryV0"
+##### "MemberRepositoryV0" :facepunch:
 
 ```java
 @Slf4j
@@ -316,7 +316,7 @@ public class MemberRepositoryV0 {
 
 
 
-##### "커넥션 획득"
+##### "커넥션 획득" :confetti_ball:
 
 - ***```getConntion()```*** :  이전에 만들어둔 ***```DBConnectionUtil```*** 를 통해서 데이터베이스 커넥션을 획득한다.
 - ***```con.prepareStatement(sql)```***  : 데이터베이스에 전달할 SQL과 파라미터로 전달할 데이터들을 준비한다.
@@ -343,7 +343,7 @@ public class MemberRepositoryV0 {
 
 
 
-##### "MemberRepositoryTest"
+##### "MemberRepositoryTest" :facepunch:
 
 ```java
 public class MemberRepositoryTest {
@@ -365,7 +365,7 @@ public class MemberRepositoryTest {
 
 
 
-##### "MemberRepositoryV0 - 회원 조회 추가" 
+##### "MemberRepositoryV0 - 회원 조회 추가"  :facepunch:
 
 ```java
 @Slf4j
@@ -436,7 +436,7 @@ public class MemberRepositoryV0 {
 }
 ```
 
-##### "MemberRepositoryTest"
+##### "MemberRepositoryTest" :facepunch:
 
 ```java
 @Slf4j
@@ -465,7 +465,7 @@ public class MemberRepositoryTest {
 
 ## JDBC 개발 - 수정, 삭제
 
-##### "memberRepositoryV0 - 회원 수정 추가" 
+##### "memberRepositoryV0 - 회원 수정 추가"  :facepunch:
 
 ```java
 public void update(String memberId, int money) throws SQLException {
@@ -491,7 +491,7 @@ public void update(String memberId, int money) throws SQLException {
 
 
 
-##### "memberRepositoryTest"
+##### "memberRepositoryTest" :facepunch:
 
 ```java
 @Test
@@ -514,7 +514,7 @@ void curd() throws SQLException{
 
 
 
-##### "memberRepositoryV0 - 회원 삭제 추가" 
+##### "memberRepositoryV0 - 회원 삭제 추가"  :facepunch:
 
 ```java
 public void delete(String memberId) throws SQLException {
@@ -538,7 +538,7 @@ public void delete(String memberId) throws SQLException {
 
 
 
-##### "memberRepositoryTest"
+##### "memberRepositoryTest" :facepunch:
 
 ```java
 @Slf4j
@@ -570,3 +570,221 @@ public class MemberRepositoryTest {
 
 }
 ```
+
+
+
+
+
+## 2. 커넥션풀과 데이터소스 이해
+
+##### "데이터베이스 커넥션을 매번 획득" :facepunch:
+
+![image](https://user-images.githubusercontent.com/76586084/187911104-4e9c108a-bbde-4c20-9f8b-586e78af72d7.png)
+
+데이터베이스 커넥션을 획득할 때는 다음과 같은 복잡한 과정을 거친다.
+
+1. 애플리케이션 로직은 DB 드라이버를 통해 커넥션을 조회한다.
+2. DB 드라이버는 DB와 ***```TCP/IP```*** 커넥션을 연결한다. 물론 이 과정에서 3 way handshake 같은 ***```TCP/IP```*** 연결을 위한 네트워크 동작이 발생한다.
+3. DB 드라이버는 ***```TCP/IP```*** 커넥션이 연결되면 ID, PW 와 기타 부가정보를 DB에 전달한다.
+4. DB는 ID, PW 를 통해 내부 인증을 완료하고, 내부에 DB 세션을 생성한다.
+5. DB는 커넥션 생성이 완료되었다는 응답을 보낸다.
+6. DB 드라이버는 커넥션 객체를 생성해서 클라이언트에 반환한다.
+
+이렇게 커넥션을 새로 만드는 것은 과정도 복잡하고 시간도 많이 소모되는 일이다.
+DB는 물론이고 애플리케이션 서버에서도 ***```TCP/IP```*** 커넥션을 새로 생성하기 위한 리소스를 매번 사용해야 한다.
+결과적으로 응답 속도에 영향을 준다. 이것은 좋지 않다!! :rage:
+
+
+
+:open_mouth: 이런 문제를 한번에 해결하는 아이디어가 바로 커넥션을 미리 생성해두고 사용하는 커넥션 풀이라는 방법이다.
+커넥션 풀은 이름 그래도 커넥션을 관리하는 풀이다.
+
+
+
+##### "커넥션 풀 초기화" :facepunch:
+
+![image](https://user-images.githubusercontent.com/76586084/187914598-d7a7aec0-5f39-4a6d-9e87-f86c47d5165f.png)
+
+애플리케이션을 시작하는 시점에 커넥션 풀은 필요한 만큼 커넥션을 미리 확보해서 풀에 보관한다. 보통 얼마나 보관할지는 서비스의 특징과 서버 스펙에 따라 다르지만 기본값을 10개이다.
+
+
+
+##### "커넥션 풀의 연결 상태" :facepunch:
+
+![image](https://user-images.githubusercontent.com/76586084/187916346-4becb329-24ba-41ce-a09a-411f90baf385.png)
+
+커넥션 풀에 들어 있는 커넥션은 TCP/IP로 DB와 커넥션이 연결되어 있는 상태이기 때문에 언제든지 즉시 SQL을 DB에 전달할 수 있다.
+
+
+
+##### "커넥션 풀 사용1" :facepunch:
+
+![image](https://user-images.githubusercontent.com/76586084/187917561-7466ef28-18d0-445c-a720-55a6e43ef432.png)
+
+- ㅉ애플리케이션 로직에서 이제는 DB 드라이버를 통해서 새로운 커넥션을 획득하는 것이 아니다.
+- 이제는 커넥션 풀을 통해 이미 생성되어 있는 커넥션을 개개체 참조로 그냥 가져다 쓰기만 하면 된다.
+- 커넥션 풀에 커넥션을 요청하면 커넥션 풀은 자신이 가지고 있는 커넥션 중에 하나를 반환한다.
+
+
+
+##### "커넥션 풀 사용2" :punch:
+
+![image](https://user-images.githubusercontent.com/76586084/187918616-82db6618-b3aa-4c34-b7b1-79f4fd647f64.png)
+
+- 애플리케이션 로직은 커넥션 풀에서 받은 커넥션을 사용해서 SQL을 데이터베이스에 전달하고 그 결과를 받아서 처리한다.
+- 커넥션을 모두 사용하고 나면 이제는 커넥션을 종료하는 것이 아니라, 다음에 다시 사용할 수 있도록 해당 커넥션을 그대로 커넥션풀에 반환하면 된다. (종료 :x: 반환 :o: )
+
+
+
+성능과 사용의 편리함 측면에서 ***```hikariCP```*** 를 커넥션 풀 오픈소스로 사용한다. (스프링 2.0부터는 기본 커넥션 풀로 ***```hikariCP```*** 를 사용)
+
+
+
+
+
+
+
+## DataSource 이해
+
+커넥션을 얻는 방법은 앞서 학습한 JDBC ***```DriverManager```*** 를 직접 사용하거나, 커넥션 풀을 사용하는 등 다양한 방법이 존재한다.
+
+##### DriverManager를 통해서 얻느냐 Connection pool을 통해서 얻느냐. (매번 새로 생성하느냐, 생성해 놓은것을 가지고 오느냐)
+
+##### 
+
+##### "커넥션을 획득하는 방법을 추상화" :punch:
+
+![image](https://user-images.githubusercontent.com/76586084/187921818-92542aca-45ef-45ef-9db7-d21ecb1a07f7.png)
+
+- 자바에서 이런 문제를 해결하기 위해 ***```javax.sql.DataSource```*** 라는 인터페이스를 제공한다.
+- ***```DataSource```*** 는 ***커넥션을 획득하는 방법을 추상화*** 하는 인터페이스이다.
+- 이 인터페이스의 핵심 기능은 커넥션 조회 하나이다.
+
+
+
+##### "DataSource 핵심 기능만 축약" :punch:
+
+```java
+public interface DataSource{
+    Connection getConnection() throws SELExcepion;
+}
+```
+
+
+
+##### "ConnectionTest - 드라이브 매니저" :punch:
+
+```java
+@Test
+void driveManager() throws SQLException {
+    Connection con1 = DriverManager.getConnection(URL, USERNAME, PASSWORD);
+    Connection con2 = DriverManager.getConnection(URL, USERNAME, PASSWORD);
+    log.info("connection = {}, class={}", con1, con1.getClass());
+    log.info("connection = {}, class={}", con2, con2.getClass());
+}
+```
+
+##### 실행 결과
+
+```
+23:34:27.718 [Test worker] INFO hello.jdbc.connection.ConnectionTest - connection = conn0: url=jdbc:h2:tcp://localhost/~/test user=SA, class=class org.h2.jdbc.JdbcConnection
+23:34:27.743 [Test worker] INFO hello.jdbc.connection.ConnectionTest - connection = conn1: url=jdbc:h2:tcp://localhost/~/test user=SA, class=class org.h2.jdbc.JdbcConnection
+```
+
+
+
+이번에는 스프링이 제공하는 ***```DataSource```*** 가 적용된 ***```DriveManager```*** 인 ***```DriveManagerDataSource```*** 를 사용해 보자.
+
+
+
+##### "Connection Test - 데이터소스 드라이브 매니저" :punch:
+
+```java
+@Test
+void dataSourceDriverManager() throws SQLException {
+    //DriverManagerDataSource - 항상 새로운 커넥션을 획득
+    DataSource dataSource = new DriverManagerDataSource(URL, USERNAME, PASSWORD);
+    useDataSource(dataSource);
+}
+
+private void useDataSource(DataSource dataSource) throws SQLException {
+    Connection con1 = dataSource.getConnection();
+    Connection con2 = dataSource.getConnection();
+    log.info("connection = {}, class={}", con1, con1.getClass());
+    log.info("connection = {}, class={}", con2, con2.getClass());
+}
+```
+
+##### 실행 결과
+
+```
+23:38:38.345 [Test worker] DEBUG org.springframework.jdbc.datasource.DriverManagerDataSource - Creating new JDBC DriverManager Connection to [jdbc:h2:tcp://localhost/~/test]
+23:38:38.546 [Test worker] DEBUG org.springframework.jdbc.datasource.DriverManagerDataSource - Creating new JDBC DriverManager Connection to [jdbc:h2:tcp://localhost/~/test]
+23:38:38.554 [Test worker] INFO hello.jdbc.connection.ConnectionTest - connection = conn0: url=jdbc:h2:tcp://localhost/~/test user=SA, class=class org.h2.jdbc.JdbcConnection
+23:38:38.557 [Test worker] INFO hello.jdbc.connection.ConnectionTest - connection = conn1: url=jdbc:h2:tcp://localhost/~/test user=SA, class=class org.h2.jdbc.JdbcConnection
+```
+
+기존 코드와 비슷하지만 ***```DriverManagerDataSource```*** 는  ***```DataSource```*** 를 통해서 커넥션을 획득할 수 있다. 참고로 ***```DriverManagerDataSource```*** 는 스프링이 제공하는 코드이다.
+
+
+
+##### 파라미터 차이 :dagger:
+
+기존 ***```DriverManager```*** 를 통해서 커넥션을 획득하는 방법과 ***```DataSource```*** 를 통해서 커넥션을 획득하는 방법에는 큰 차이가 있다.
+
+-  ***```DriverManager```*** 는 커넥션을 획득할 때 마다  ***```URL```*** , ***```USERNAME```*** , ***```PASSWORD```*** 같은 파라미터를 계속 전달해야 한다. 반면에 ***```DataSource```*** 를 사용하는 방식은 처음 객체를 생성할 때만 필요한 파라미터를 넘겨두고, 커넥션을 획득할 때는 단순히 ***```dataSource.getConnection()```*** 만 호출하면 된다.
+
+
+
+##### 설정과 사용의 분리
+
+- ***설정*** : ***```DataSource```*** 를 만들고 필요한 속성들을 사용해서***```URL```*** , ***```USERNAME```*** , ***```PASSWORD```*** 같은 부분을 입력하는 것을 말한다. 이렇게 설정과 관련된 속성들을 한 곳에 있는 것이 향후 변경에 더 유연하게 대처할 수 있다. :gear:
+- ***사용*** : 설정은 신경쓰지 않고, ***```DataSource```***  의 ***```getConnection()```***  만 호출해서 사용하면 된다. :rocket:
+
+
+
+##### 설정과 사용의 분리 설명
+
+- 이 부분이 작아보이지만 큰 차이를 만들어내는데, 필요한 데이터를 ***```DataSource```***  가 만들어지는 시점에 미리 다 넣어두게 되면, ***```DataSource```***  를 사용하는 곳에서는 ***```dataSource.getConnection()```*** 만 호출하면 되므로, ***```URL```*** , ***```USERNAME```*** , ***```PASSWORD```***  같은 속성들에 의존하지 않아도 된다. 그냥 ***```DataSource```***  만 주입받아서 ***```getConnection()```*** 만 호출하면 된다.  :whale:
+- 쉽게 이야기해서 리포지토리(Repository)는 ***```DataSource```***  만 의존하고, 이런 속성을 몰라도 된다. 애플리케이션을 개발해보면 보통 설정은 한 곳에서 하지만, 사용은 수 많은 곳에서 하게 된다. 덕분에 객체를 설정하는 부분과, 사용하는 부분을 좀 더 명확하게 분리할 수 있다. :whale2:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
