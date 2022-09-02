@@ -752,6 +752,457 @@ private void useDataSource(DataSource dataSource) throws SQLException {
 
 
 
+## DataSource 예제2 - 커넥션 풀
+
+이번에는 ***```DataSource```*** 를 통해 커넥션 풀을 사용하는 예제를 알아보자.
+
+
+
+##### "Connection Test - 데이터소스 커넥션 풀 추가"
+
+```java
+@Test
+void dataSourceConnectionPool() throws SQLException, InterruptedException{
+    //커넥션 풀링 : HikariProxyConnection(Proxy) -> JdbcConnection(Target)
+    HikariDataSource dataSource = new HikariDataSource();
+    dataSource.setJdbcUrl(URL);
+    dataSource.setUsername(USERNAME);
+    dataSource.setPassword(PASSWORD);
+    dataSource.setMaximumPoolSize(10);
+    dataSource.setPoolName("MyPool");
+    
+    useDataSource(dataSource);
+    Thread.sleep(1000);
+}
+```
+
+- HikariCP 커넥션 풀을 사용한다. ***```HikariDataSource```*** 는 ***```DataSource```*** 인터페이스를 구현하고 있다.
+- 커넥션 풀 최대 사이즈를 10으로 지정하고, 풀의 이름을 ***```MyPool```*** 이라고 지정했다.
+- 커넥션 풀에서 커넥션을 생성하는 작업은 애플리케이션 실행 속도에 영향을 주지 않기 위해 별도의 쓰레드에서 작동한다. 별도의 쓰레드에서 동작하기 때문에 테스트가 먼저 종료되어 버린다. 예제처럼 ***```Thread.sleep(1000)```*** 을 통해 대기 시간을 주어야 쓰레드 풀에 커넥션이 생성되는 로그를 확인할 수 있다.
+
+
+
+##### "실행 결과"
+
+```
+12:54:12.844 [MyPool housekeeper] DEBUG com.zaxxer.hikari.pool.HikariPool - MyPool - Pool stats (total=2, active=2, idle=0, waiting=0)
+12:54:12.859 [MyPool connection adder] DEBUG com.zaxxer.hikari.pool.HikariPool - MyPool - Added connection conn2: url=jdbc:h2:tcp://localhost/~/test user=SA
+12:54:12.875 [MyPool connection adder] DEBUG com.zaxxer.hikari.pool.HikariPool - MyPool - Added connection conn3: url=jdbc:h2:tcp://localhost/~/test user=SA
+12:54:12.884 [MyPool connection adder] DEBUG com.zaxxer.hikari.pool.HikariPool - MyPool - Added connection conn4: url=jdbc:h2:tcp://localhost/~/test user=SA
+12:54:12.892 [MyPool connection adder] DEBUG com.zaxxer.hikari.pool.HikariPool - MyPool - Added connection conn5: url=jdbc:h2:tcp://localhost/~/test user=SA
+12:54:12.907 [MyPool connection adder] DEBUG com.zaxxer.hikari.pool.HikariPool - MyPool - Added connection conn6: url=jdbc:h2:tcp://localhost/~/test user=SA
+12:54:12.914 [MyPool connection adder] DEBUG com.zaxxer.hikari.pool.HikariPool - MyPool - Added connection conn7: url=jdbc:h2:tcp://localhost/~/test user=SA
+12:54:12.928 [MyPool connection adder] DEBUG com.zaxxer.hikari.pool.HikariPool - MyPool - Added connection conn8: url=jdbc:h2:tcp://localhost/~/test user=SA
+12:54:12.952 [MyPool connection adder] DEBUG com.zaxxer.hikari.pool.HikariPool - MyPool - Added connection conn9: url=jdbc:h2:tcp://localhost/~/test user=SA
+12:54:12.953 [MyPool connection adder] DEBUG com.zaxxer.hikari.pool.HikariPool - MyPool - After adding stats (total=10, active=2, idle=8, waiting=0)
+BUILD SUCCESSFUL in 1m 16s
+4 actionable tasks: 2 executed, 2 up-to-date
+오후 12:54:15: Task execution finished ':test --tests "hello.jdbc.connection.ConnectionTest.dataSourceConnectionPool"'.
+```
+
+
+
+
+
+## DataSource 적용
+
+이번에는 애플리케이션에 ***```DataSource```*** 를 적용해보자
+
+##### "MemberRepositoryV1"
+
+```java
+@Slf4j
+public class MemberRepositoryV1 {
+
+    private final DataSource dataSource;
+
+    public MemberRepositoryV1(DataSource dataSource) {
+        this.dataSource = dataSource;
+    }
+
+    public Member save(Member member) throws SQLException {
+        String sql = "insert into member(member_id, money) values(?,?)";
+
+        Connection con = null;
+        PreparedStatement pstmt = null;
+
+        try {
+            con = getConnection();
+            pstmt = con.prepareStatement(sql);
+            pstmt.setString(1, member.getMemberId());
+            pstmt.setInt(2, member.getMoney());
+            pstmt.executeUpdate();
+            return member;
+        } catch (SQLException e) {
+            log.error("db error", e);
+            throw e;
+        }finally{
+            close(con, pstmt, null);
+        }
+    }
+
+    public Member findById(String memberId) throws SQLException {
+        String sql = "select * from member where member_id = ?";
+
+        Connection con = null;
+        PreparedStatement pstmt = null;
+        ResultSet rs = null;
+
+        try {
+            con = getConnection();
+            pstmt = con.prepareStatement(sql);
+            pstmt.setString(1, memberId);
+            rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                Member member = new Member();
+                member.setMemberId(rs.getString("member_id"));
+                member.setMoney(rs.getInt("money"));
+                return member;
+            }else{
+                throw new NoSuchElementException("member not found memberId=" + memberId);
+            }
+        } catch (SQLException e) {
+            log.error("db error", e);
+            throw e;
+        } finally {
+            close(con, pstmt, rs);
+        }
+    }
+
+    public void update(String memberId, int money) throws SQLException {
+        String sql = "update member set money = ? where member_id =?";
+        Connection con = null;
+        PreparedStatement pstmt = null;
+
+        try {
+            con = getConnection();
+            pstmt = con.prepareStatement(sql);
+            pstmt.setInt(1, money);
+            pstmt.setString(2, memberId);
+            int resultSize = pstmt.executeUpdate();
+            log.info("resultSize={}", resultSize);
+        } catch (SQLException e) {
+            log.error("db error", e);
+            throw e;
+        }finally {
+            close(con, pstmt, null);
+        }
+    }
+
+    public void delete(String memberId) throws SQLException {
+        String sql = "delete from member where member_id = ?";
+        Connection con = null;
+        PreparedStatement pstmt = null;
+
+        try {
+            con = getConnection();
+            pstmt = con.prepareStatement(sql);
+            pstmt.setString(1, memberId);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            log.error("db error", e);
+            throw e;
+        }finally {
+            close(con, pstmt, null);
+        }
+    }
+
+    private void close(Connection con, Statement stmt, ResultSet rs) {
+
+        JdbcUtils.closeResultSet(rs);
+        JdbcUtils.closeStatement(stmt);
+        JdbcUtils.closeConnection(con);
+
+    }
+
+    private Connection getConnection() throws SQLException {
+        Connection con = dataSource.getConnection();
+        log.info("get connection = {}. class = {}");
+
+        return DBConnectionUtil.getConnection();
+    }
+
+}
+```
+
+- ***```DataSource```*** 의존관계 주입
+
+  - 외부에서 ***```DataSource```*** 를 주입 받아서 사용한다. 이제 직접 만든 ***```DBConnectionUtil```*** 을 사용하지 않아도 된다.
+  - ***```DataSource```*** 는 표준 인터페이스 이기 때문에 ***```DriverManagerDataSource```*** 로 변경 되어도 해당 코드를 변경하지 않아도 된다.
+
+- ***```JdbcUtils```*** 편의 메서드
+
+  - 스프링은 JDBC를 편리하게 다룰 수 있는 ***```JdbcUtils```*** 라는 편의 메서드를 제공한다.
+  - ***```JdbcUtils```*** 을 사용하면 커넥션을 좀 더 편리하게 닫을 수 있다.
+
+  
+
+  ##### "MemberRepositoryV1Test"
+
+  ```java
+  @Slf4j
+  public class MemberRepositoryV1Test {
+  
+      MemberRepositoryV1 repository;
+  
+      @BeforeEach
+      void beforeEach(){
+          //기본 DriverManager - 항상 새로운 커넥션을 획득
+          DriverManagerDataSource dataSource = new DriverManagerDataSource(URL, USERNAME, PASSWORD);
+          repository = new MemberRepositoryV1(dataSource);
+      }
+  
+      @Test
+      void crud() throws SQLException {
+          //save
+          Member member = new Member("memberVO", 10000);
+          repository.save(member);
+  
+          //findById
+          Member findMember = repository.findById(member.getMemberId());
+          log.info("findMember = {}", findMember);
+          assertThat(findMember).isEqualTo(member);
+  
+          //update : money : 10000 -> 20000
+          repository.update(member.getMemberId(), 20000);
+          Member updatedMember = repository.findById(member.getMemberId());
+          assertThat(updatedMember.getMoney()).isEqualTo(20000);
+  
+          //delete
+          repository.delete(member.getMemberId());
+          Assertions.assertThatThrownBy(() -> repository.findById(member.getMemberId()))
+                  .isInstanceOf(NoSuchElementException.class);
+      }
+  
+  
+  }
+  ```
+
+  ##### "실행 결과"
+
+```
+13:42:12.376 [Test worker] DEBUG org.springframework.jdbc.datasource.DriverManagerDataSource - Creating new JDBC DriverManager Connection to [jdbc:h2:tcp://localhost/~/test]
+13:42:12.745 [Test worker] INFO hello.jdbc.repository.MemberRepositoryV1 - get connection = conn0: url=jdbc:h2:tcp://localhost/~/test user=SA. class = class org.h2.jdbc.JdbcConnection
+13:42:12.760 [Test worker] INFO hello.jdbc.connection.DBConnectionUtil - get connection = conn1: url=jdbc:h2:tcp://localhost/~/test user=SA, class = class org.h2.jdbc.JdbcConnection
+13:42:12.832 [Test worker] DEBUG org.springframework.jdbc.datasource.DriverManagerDataSource - Creating new JDBC DriverManager Connection to [jdbc:h2:tcp://localhost/~/test]
+13:42:12.838 [Test worker] INFO hello.jdbc.repository.MemberRepositoryV1 - get connection = conn2: url=jdbc:h2:tcp://localhost/~/test user=SA. class = class org.h2.jdbc.JdbcConnection
+13:42:12.844 [Test worker] INFO hello.jdbc.connection.DBConnectionUtil - get connection = conn3: url=jdbc:h2:tcp://localhost/~/test user=SA, class = class org.h2.jdbc.JdbcConnection
+13:42:12.862 [Test worker] INFO hello.jdbc.repository.MemberRepositoryV1Test - findMember = Member(memberId=memberVO, money=10000)
+13:42:13.151 [Test worker] DEBUG org.springframework.jdbc.datasource.DriverManagerDataSource - Creating new JDBC DriverManager Connection to [jdbc:h2:tcp://localhost/~/test]
+13:42:13.158 [Test worker] INFO hello.jdbc.repository.MemberRepositoryV1 - get connection = conn4: url=jdbc:h2:tcp://localhost/~/test user=SA. class = class org.h2.jdbc.JdbcConnection
+13:42:13.163 [Test worker] INFO hello.jdbc.connection.DBConnectionUtil - get connection = conn5: url=jdbc:h2:tcp://localhost/~/test user=SA, class = class org.h2.jdbc.JdbcConnection
+13:42:13.168 [Test worker] INFO hello.jdbc.repository.MemberRepositoryV1 - resultSize=1
+13:42:13.171 [Test worker] DEBUG org.springframework.jdbc.datasource.DriverManagerDataSource - Creating new 
+```
+
+계속 새로 생성해서 느리다! -> ConnectionPool을 쓰면 된다.
+
+
+
+##### "MemberRepositoryV1Test" - @BeforeEach 수정
+
+```java
+@BeforeEach
+void beforeEach(){
+    //기본 DriverManager - 항상 새로운 커넥션을 획득
+    //DriverManagerDataSource dataSource = new DriverManagerDataSource(URL, USERNAME, PASSWORD);
+
+    //커넥션 풀링
+    HikariDataSource dataSource = new HikariDataSource();
+    dataSource.setJdbcUrl(URL);
+    dataSource.setUsername(USERNAME);
+    dataSource.setPassword(PASSWORD);
+    repository = new MemberRepositoryV1(dataSource);
+}
+```
+
+
+
+
+
+## 3. 트랜잭션 이해
+
+##### 트랜잭션 - 개념 이해
+
+데이터를 저장할 때 단순히 파일에 저장해도 되는데, 데이터베이스에 저장하는 이유는 무엇일까? 여러가지 이유가 있지만, 가장 대표적인 이유는 바로 데이터베이스는 트랙잭션이라는 개념을 지원하기 때문이다. :open_mouth:
+
+트랜잭션을 이름 그대로 번역하면 거래라는 뜻이다. 이것을 쉽게 풀어서 이야기하면, 데이터베이스에서 트랜잭션은 하나의 거래를 안전하게 처리하도록 보장해주는 것을 뜻한다. 그런데 하나의 거래를 안전하게 처리하려면 생각보다 고려해야 할 점이 많다. 계좌이체를 하는 상황을 가정해 보자 A의 계좌에서 B의 계좌로 5000원을 계좌이체한다고 생각해보면 A의 잔고는 5000원 감소하고 B의 잔고는 5000원 증가해야 한다.
+
+##### "5000원 계좌 이체"
+
+1. A의 잔고를 5000원 감소
+2. B의 잔고를 5000원 증가
+
+계좌이체라는 거래는 이렇게 2가지 작업이 독장해야 한다. 만약 1번은 성공했는데 2번에서 시스템에 문제가 발생하면 계좌이체는 실패하고, A의 잔고만 5000원 감소하는 심각한 문제가 발생한다. :fearful:
+데이터베이스가 제공하는 트랙잰색 기능을 사용하면 1,2 둘다 함께 성공해야 저장하고, 중간에 하나라도 실패하면 거래 전의 상태로 돌아갈 수 있다. 만약 1번은 성공했는데 2번에서 시스템에 문제가 발생하면 계좌이체는 실패가고, 거래 전의 상태로 완전히 돌아갈 수 있다.
+결과적으로 A의 잔고가 감소하지 않는다.
+
+모든 작업이 성공해서 데이터베이스에 정상 반영하는 것을 ***```커밋(Commit)```*** 이라 하고, 작업 중 하나라도 실패해서 거래 이전으로 되돌리는 것을 ***```롤백(Rollback)```*** 이라 한다.
+
+
+
+##### 트랜잭션 ACID
+
+트랜잭션은 ACID라 하는 원자성(Atomicity), 일관성(Consistency), 격리성(Isolation), 지속성(Durability)을 보장해야 한다.
+
+- ***원자성*** : 트랜잭션 내에서 실행한 작업들은 마치 하나의 작업인 것처럼 모두 성공 하거나 모두 실패해야 한다. :atom_symbol:
+- ***일관성*** : 모든 트랙잭션은 일관성 있는 데이터베이스 상태를 유지해야 한다. 예를 들어 데이터베이스에서 정한 무결성 제약 조건을 항상 만족해야 한다. :spider_web:
+- ***격리성*** : 동시에 실행되는 트랜잭션들이 서로에게 영향을 미치지 않도록 격리한다. 예를 들어 동시에 같은 데이터를 수정하지 못하도록 해야 한다. 격리성은 동시성과 관련된 성능 이슈로 인해 트랜잭션 격리 수전(isolation level)을 선택할 수 있다. :european_castle:
+- ***지속성*** : 트랜잰션을 성공적으로 끝내면 그 결과가 항상 기록되어야 한다. 중간에 시스템에 문제가 발생해도 데이터베이스 로그 등을 사용해서 겅공한 트랜잭션 내용을 복구해야 한다.
+
+트랜잭션은 원자성, 일관성, 지속성을 보장한다. 문제는 격리성인데 트랜잭션 같에 격리성을 완변히 보장라혀면 트랜잭션을 거의 순서대로 실행해야 한다. 이렇게 하면 동시 처리 성능이 매우 나빠진다. 이런 문제로 인해 ANSI 표준은 트랜잭션의 격리 수준을 4단계로 나누어 정의했다.
+
+
+
+##### 트랜잭션 격리 수준 - Isolation level :desktop_computer:
+
+- READ UNCOMMITED(커밋되지 않은 읽기)
+- READ COMMITED(커밋된 읽기)
+- REPEATABLE READ(반복 가능한 읽기)
+- SERIALIZABLE(직렬화 기능)
+
+
+
+> ***참고*** : 강의에서는 일반적으로 사용하는 READ COMMITED(커밋된 읽기) 트랜잭션 격리 수준을 기준으로 설명한다.
+
+
+
+
+
+## 데이터베이스 연결 구조와 DB 세션
+
+트랜잭션을 더 자세히 이해하기 위해 데이터베이스 서버 연결 구조와 DB 세션에 대해 알아보자.
+
+
+
+##### "데이터베이스 연결 구조1"
+
+![image](https://user-images.githubusercontent.com/76586084/188096832-fee7f802-62c0-41d6-bbf2-bbbf192dbe13.png)
+
+- 사용자는 웹 애플리케이션 서버(WAS)나 DB 접근 툴 같은 클라이언트를 사용해서 데이터베이스 서버에 접근할 수 있다. 클라이언트는 데이터베이스 서버에 연결을 요청하고 커넥션을 맺게 된다. 이때 데이터베이스 서버는 내부에 세션이라는 것을 만든다. 그리고 앞으로 해당 커넥션을 통한 모든 요청은 이 세션을 통해서 실행하게  된다.
+- 쉽게 이야기해서 개발자가 클라이언트를 통해 SQL을 전달하면서 현재 커넥션에 연결된 세션이 SQL을 실행한다.
+- 세션은 트랜잭션을 시작하고, 커밋 또는 롤백을 통해 트랜잭션을 종료한다. 그리고 이후에 새로운 트랜잭션을 다시 시작할 수 있다.
+- 사용자가 커넥션을 닫거나, 또는 DBA(DB 관리자)가 세션을 강제로 종료하면 세션을 종료된다.
+
+
+
+##### "데이터베이스 연결 구조2"
+
+![image](https://user-images.githubusercontent.com/76586084/188099074-99baa4a8-af13-4cdc-b890-cc22b55bc301.png)
+
+- 커넥션 풀이 10개의 커넥션을 생성하면, 세션도 10개 만들어진다.
+
+
+
+
+
+바로 코드로 들어가보자.
+
+##### table 준비 :golfing_man:
+
+![image-20220902180050187](C:\Users\user\AppData\Roaming\Typora\typora-user-images\image-20220902180050187.png)
+
+##### 자동 커밋
+
+트랜잭션을 사용하려면 먼저 자동 커밋과 수동 커밋을 이해해야 한다.
+자동 커밋으로 설정하면 각각의 쿼리 실행 직후에 자동으로 커밋을 호출한다. 따라서 커밋이나 롤백을 직접 호출하지 않아도 되는 편리함이 있다. 하지만 쿼리를 하나하나 실행할 때 마다 자동으로 커밋이 되어버리기 때문에 우리가 원하는 트랜잭션 기능을 제대로 사용할 수 없다.
+
+
+
+##### 자동 커밋 설정 :oncoming_automobile:
+
+```sql
+set autocommit true;
+insert into member(member_id, money) values ('data1', 10000);
+insert into member(member_id, money) values ('data2', 20000);
+```
+
+
+
+따라서 ***```commit```*** , ***```rollback```*** 을 직접 호출하면서 트랜잭션 기능을 제대로 수행하려면 자동 커밈ㅅ을 끄고 수동 커밋을 사용해야 한다.
+
+##### 수동 커밋 설정:traffic_light:
+
+```java
+set autocommit false;
+insert into member(member_id, money) values ('data3', 10000);
+insert into member(member_id, money) values ('data4', 10000);
+```
+
+보통  자동 커밋 모드가 기본으로 설전된 경우가 많기 때문에 ***수동 커밋 모드로 설정하는 것을 트랜잭션을 시작*** 한다고 표현할 수 있다.
+수동 커밋 설정을 하면 이루헤 꼭 ***```commit```*** , ***```rollback```*** 을 호출해야한다.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
