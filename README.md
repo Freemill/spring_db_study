@@ -920,7 +920,7 @@ public class MemberRepositoryV1 {
         Connection con = dataSource.getConnection();
         log.info("get connection = {}. class = {}");
 
-        return DBConnectionUtil.getConnection();
+        return con;
     }
 
 }
@@ -1137,7 +1137,119 @@ insert into member(member_id, money) values ('data4', 10000);
 
 
 
+## 트랜잭션 - 적용1
 
+실제 애플리케이션에 DB 트랜잭션을 사용해서 계좌이체 같이 원자성이 중요한 비즈니스 로직을 어떻게 구현하는지 알아보자. 먼저 트랜잭션 없이 단순하게 계좌이체 비즈니스 로직만 구현해보자.
+
+##### "MemberServiceV1"
+
+```java
+@RequiredArgsConstructor
+public class MemberServiceV1 {
+
+    private final MemberRepositoryV1 memberRepository;
+
+    public void accountTransfer(String fromId, String toId, int money) throws SQLException {
+        Member fromMember = memberRepository.findById(fromId);
+        Member toMember = memberRepository.findById(toId);
+
+        memberRepository.update(fromId, fromMember.getMoney() - money);
+        validation(toMember);
+        memberRepository.update(toId, toMember.getMoney() + money);
+    }
+
+    private void validation(Member toMember) {
+        if (toMember.getMemberId().equals("ex")) {
+            throw new IllegalStateException("이체중 예외 발생");
+        }
+    }
+}
+```
+
+- ***```fromId```*** 의 회원을 조회해서 ***```toId```*** 의 회원에게 ***```money```*** 만큼의 돈을 계좌이체 하는 로직이다.
+  - ***```fromId```*** 회원의 돈을  ***```money```*** 만큼 감소한다. :arrow_right: UPDATE SQL 실행
+  - ***```toId```*** 회원의 돈을 ***```money```*** 만큼 증가한다. :arrow_right: UPDATE SQL 실행
+- 예외 상황을 테스트해보기 위해 ***```toId```*** 가 ***```ex```***  인 경우 예외를 발생한다.
+
+
+
+##### "MemberServiceV1Test"
+
+```java
+/**
+ * 기본 동작, 트랜잭션이 없어서 문제 발생
+ */
+public class MemberServiceV1Test {
+
+    public static final String MEMBER_A = "memberA";
+    public static final String MEMBER_B = "memberB";
+    public static final String MEMBER_EX = "ex";
+
+    private MemberRepositoryV1 memberRepository;
+    private MemberServiceV1 memberService;
+
+    @BeforeEach
+    void before() {
+        DriverManagerDataSource dataSource = new DriverManagerDataSource(URL, USERNAME, PASSWORD);
+        memberRepository = new MemberRepositoryV1(dataSource);
+        memberService = new MemberServiceV1(memberRepository);
+    }
+    
+    @AfterEach
+    void after() throws SQLException {
+        memberRepository.delete(MEMBER_A);
+        memberRepository.delete(MEMBER_B);
+        memberRepository.delete(MEMBER_EX);
+    }
+
+    @Test
+    @DisplayName("정상 이체")
+    void accountTransfer() throws SQLException {
+        //given
+        Member memberA = new Member(MEMBER_A, 10000);
+        Member memberB = new Member(MEMBER_B, 10000);
+        memberRepository.save(memberA);
+        memberRepository.save(memberB);
+
+        //when
+        memberService.accountTransfer(memberA.getMemberId(), memberB.getMemberId(), 2000);
+
+        //then
+        Member findMemberA = memberRepository.findById(memberA.getMemberId());
+        Member findMemberB = memberRepository.findById(memberB.getMemberId());
+        assertThat(findMemberA.getMoney()).isEqualTo(8000);
+        assertThat(findMemberB.getMoney()).isEqualTo(12000);
+    }
+    
+    @Test
+    @DisplayName("이체 중 예외 발생")
+    void accountTransferEx() throws SQLException {
+        //given
+        Member memberA = new Member(MEMBER_A, 10000);
+        Member memberEx = new Member(MEMBER_EX, 10000);
+        memberRepository.save(memberA);
+        memberRepository.save(memberEx);
+
+        //when
+        assertThatThrownBy(() -> memberService.accountTransfer(memberA.getMemberId(),
+                                                               memberEx.getMemberId(), 2000))
+                .isInstanceOf(IllegalStateException.class);
+
+        //then
+        Member findMemberA = memberRepository.findById(memberA.getMemberId());
+        Member findMemberB = memberRepository.findById(memberEx.getMemberId());
+        assertThat(findMemberA.getMoney()).isEqualTo(8000);
+        assertThat(findMemberB.getMoney()).isEqualTo(10000);
+    }
+
+}
+```
+
+
+
+##### "정리"  :open_mouth:
+
+이체중 예외가 발생하게 되면 ***```memberA```*** 의 금액은 10000원 :arrow_right: 8000원으로 2000원 감소한다. 그런데 ***```memberB```*** 의 돈은 그대로 10000원으로 남아있다. 결과적으로 ***```memberA```*** 의 돈만 2000원 감소한 것이다.
 
 
 

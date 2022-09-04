@@ -121,7 +121,7 @@ public class MemberRepositoryV1 {
         Connection con = dataSource.getConnection();
         log.info("get connection = {}. class = {}", con, con.getClass());
 
-        return DBConnectionUtil.getConnection();
+        return con;
     }
 
 }
