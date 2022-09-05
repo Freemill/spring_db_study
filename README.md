@@ -650,7 +650,7 @@ DB는 물론이고 애플리케이션 서버에서도 ***```TCP/IP```*** 커넥�
 
 ##### DriverManager를 통해서 얻느냐 Connection pool을 통해서 얻느냐. (매번 새로 생성하느냐, 생성해 놓은것을 가지고 오느냐)
 
-##### 
+
 
 ##### "커넥션을 획득하는 방법을 추상화" :punch:
 
@@ -1579,41 +1579,601 @@ public class MemberServiceV2Test {
 
 
 
+## 4. 스프링과 문제 해결 - 트랙잭션
+
+##### 문제점들
+
+##### 애플리케이션 구조
+
+여러가지 애플리케이션 구조가 있지만, 가장 단순하면서 많이 사용하는 방법은 역할에 따라 3가지 계층으로 나누는 것이다.
+
+![image](https://user-images.githubusercontent.com/76586084/188398321-2eec7f0e-a9d8-498f-9afe-5dc1799e1d73.png)
+
+- ##### "프레젠테이션 계층"
+
+  - UI와 관련된 처리 담당
+  - 웹 요청과 응답
+  - 사용자 요청을 검증
+  - 주 사용 기술 : 서블릿과 HTTP 같은 웹 기술, 스프링 MVC
+
+- ##### "서비스 계층"
+
+  - 비즈니스 로직을 담당
+  - 주 사용 기술: 가급적 특정 기술에 의존하지 않고, 순수 자바 코드로 구성
+
+- ##### "데이터 접근 계층"
+
+  - 실제 데이터베이스에 접근하는 코드
+  - 주 사용 기술: JDBC, JAP, File, Redis, Mongon, ...
+
+
+
+##### 문제점들
+
+서비스 계층을 순수하게 유지하려면 어떻게 해야할까? 지금까지 개발한 ***```MemberService```*** 코드들을 살펴보자
+
+먼저 ***```MemberService1```*** 코드를 살표보자 .보기 쉽게 일부 수정했다.
+
+##### "MemberServiceV1"
+
+```java
+@RequiredArgsConstructor
+public class MemberServiceV1 {
+
+    private final MemberRepositoryV1 memberRepository;
+
+    public void accountTransfer(String fromId, String toId, int money) throws SQLException {
+        Member fromMember = memberRepository.findById(fromId);
+        Member toMember = memberRepository.findById(toId);
+
+        memberRepository.update(fromId, fromMember.getMoney() - money);
+        validation(toMember);
+        memberRepository.update(toId, toMember.getMoney() + money);
+    }
+
+    private void validation(Member toMember) {
+        if (toMember.getMemberId().equals("ex")) {
+            throw new IllegalStateException("이체중 예외 발생");
+        }
+    }
+}
+```
+
+- ***```MemberServiceV1```*** 은 특정 기술에 종속적이지 않고, 순수한 비즈니스 로직만 존재한다.
+- 특정 기술과 관련된 코드가 거의 없어서 코드가 깔끔하고, 유지보수 하기 쉽다.
+- 향후 비즈니스 로직의 변경이 필요하면 이 부분을 변경하면 된다.
+
+
+
+사실 여기에도 남은 문제가 있다. 
+
+- ***```SQLException```*** 이라는 JDBC기술에 의존한다는 점이다.
+- 이 부분은 ***```memberRepository```*** 에서 올라오는 예외이기 때문에 ***```memberRepository```*** 에서 해결해야 한다. 이 부분은 뒤에서 예외를 다룰 때 알아보자.
+- ***```MemberRepositoryV1```*** 이라는 구체 클래스에 직접 의존하고있다. ***```memberRepository```*** 인터페이스를 도입하면 향후 ***```MemberService```*** 의 코드의 변경 없이 다른 구현 기술로 손쉽게 변경할 수 있다.
+
+
+
+다음으로 트렌젝션을 적용한 ***```MemberServiceV2```*** 코드를 살펴보자. 
+
+***```MemberServiceV2```***
+
+```java
+@Slf4j
+@RequiredArgsConstructor
+public class MemberServiceV2 {
+
+    private final DataSource dataSource;
+    private final MemberRepositoryV2 memberRepository;
+
+    public void accountTransfer(String fromId, String toId, int money) throws SQLException {
+        Connection con = dataSource.getConnection();
+        try {
+            con.setAutoCommit(false);
+            //비즈니스 로직
+            bizLogic(con, fromId, toId, money);
+            con.commit(); //성공시 커밋
+        } catch (Exception e) {
+            con.rollback();
+            throw new IllegalStateException();
+        } finally {
+            release(con);
+        }
+
+    }
+
+    private void bizLogic(Connection con, String fromId, String toId, int money) throws SQLException {
+        Member fromMember = memberRepository.findById(con, fromId);
+        Member toMember = memberRepository.findById(con, toId);
+
+        memberRepository.update(con, fromId, fromMember.getMoney() - money);
+        validation(toMember);
+        memberRepository.update(con, toId, toMember.getMoney() + money);
+    }
+
+    private void validation(Member toMember) {
+        if (toMember.getMemberId().equals("ex")) {
+            throw new IllegalStateException("이체중 예외 발생");
+        }
+    }
+
+    private void release(Connection con) {
+        if (con != null) {
+            try {
+                con.setAutoCommit(true);
+                con.close();
+            } catch (Exception e) {
+                log.info("error", e);
+            }
+        }
+    }
+}
+```
+
+- 트랜잭션은 비즈니스 로직이 있는 서비스 계층에서 시작하는 것이 좋다.
+- 그런데 문제는 트랜잭션을 사용하기 위해서 ***```javax.sq.DataSource```*** , ***```java.sql.Connection```*** , ***```java.sql.SQLException```*** 같은 JDBC 기술에 의존해야 한다는 점이다.
+- 트랜잭션을 사용하기 위해 JDBC 기술에 의존한다. 결과적으로 비즈니스 로직보다 JDBC를 사용해서 트랜잭션을 처리하는 코드가 더 많다.
+- 향후 JDBC에서 JPA같은 다른 기술로 바꾸어 사용하게 되면 서비스 코드도 모두 함께 변경해야 한다. (JPA는 트랜잭션을 사용하는 코드가 JDBC와 다르다)
+- 핵심 비즈니스 로직과 JDBC 기술이 섞여 있어서 유지보수 하기 어렵다.
+
+
+
+#### 문제정리 :warning:
+
+지금까지 애플리케이션의 문제점은 크게 3가지이다.
+
+- 트랜잭션 문제
+- 예외 누수 문제
+- JDBC 반복 무제
+
+
+
+##### "트랜잭션 문제" :interrobang:
+
+가장 큰 문제는 트랜잭션을 적용하면서 생긴 다음과 같은 문제들이다.
+
+- JDBC 구현 기술이 서브시 계층에 누수되는 문제
+  - 트랜잭션을 적용하기 위해 JDBC 구현 기술이 서비스 계층에 누수되었다.
+  - 서비스 계층은 순수해야 한다. :arrow_forward: 구현 기술을 변경해도 서비스 계층 코드는 최대한 유지할 수 있어야 한다. (변화에 대응)
+    - 그래서 데이터 접근 계층에 JDBC 코드를 다 몰아두는 것이다.
+    - 물론 데이터 접근 계층의 구현 기술이 변경될 수도 있으니 데이터 접근 계층은 인터페이스를 제공하는 것이 좋다.
+  - 서비스 계층은 특정 기술에 종속되지 않아야 한다. 지금까지 그렇게 노력해서 데이터 접근 계층으로 JDBC 관련 코드를 모았는데 ,트랜잭션을 적용하면서 결국 서비스 계층에 JDBC 구현 기술의 누수가 발생했다.
+- 트랙잭션 동기화 문제
+  - 같은 트랜잭션을 유지하기 위해 커넥션을 파라미터로 넘겨야 한다.
+  - 이때 파생되는 문제들도 있다. 똑같은 기능도 트랜잭션용 기능과 트랜잭션을 유지하지 않아도 되는 기능으로 분리해야 한다.
+- 트랜잭션 적용 반복 문제
+  - 트랜잭션 적용 코드를 보면 반복이 많다. ***```try```*** , ***```catch```*** , ***```finally```*** 
+
+
+
+##### "예외 누수" :interrobang:
+
+- 데이터 접근 계층의 JDBC 구현 기술 예외가 서비스 계층으로 전파된다.
+- ***```SQLException```*** 은 체크 예외이기 때문에 데이터 접근 계층을 호출한 서비스 계층에서 해당 예외를 잡아서 처리 ***```throws```*** 를 통해서 다시 밖으로 던져야 한다.
+- ***```SQLException```*** 은 JDBC 전용 기술이다. 향후 JPA나 다른 데이터 접근 기술을 사용하면, 그에 맞는 다른 예외로 변경해야 하고, 결국 서비스 코드도 수정해야 한다.
+
+
+
+##### "JDBC 반복 문제" :interrobang:
+
+- 지금까지 작성한 ***```MemberRepository```*** 코드는 순수한 JDBC를 사용했다.
+- 이 코드들은 유사한 코드의 반복이 너무 많다.
+  - ***```try```*** , ***```catch```*** , ***```finally```*** ...
+  - 커넥션을 열고, ***```PreparedStatement```*** 를 사용하고, 결과를 매핑하고... 실행하고, 커넥션과 리소스를 정리한다.
+
+
+
+##### 이러한 문제점들을 ***King***:crown: pring은 해결을 해준다.
+
+
+
+#### "트랜잭션 추상화"
+
+현재 서비스 계층은 트랜잭션을 사용하기 위해서 JDBC 기술에 의존하고 있다. 향후 JDBC에서 JPA 같은 다른 데이터 접근 기술로 변경하면, 서비스 계층의 트랜잭션 관련 코드로 모두 함께 수정해야 한다.
+
+
+
+##### "구현 기술에 따른 트랜잭션 사용법"
+
+- 트랜잭션은 원자적 단위의 비즈니스 로직을 처리하기 위해 사용한다.
+- 구현 기술마다 트랜잭션을 사용하는 방법이 다르다.
+
+
+
+##### "JDBC 트랜잭션 코드 예시"
+
+```java
+public void accountTransfer(String fromId, String toId, int money) throws SQLException {
+    Connection con = dataSource.getConnection();
+    try {
+        con.setAutoCommit(false);
+        //비즈니스 로직
+        bizLogic(con, fromId, toId, money);
+        con.commit(); //성공시 커밋
+    } catch (Exception e) {
+        con.rollback();
+        throw new IllegalStateException();
+    } finally {
+        release(con);
+    }
+
+}
+```
+
+
+
+##### "JPA 트랜잭션 코드 예시"
+
+```java
+public static void main(String[] args){
+    
+    //엔티티 매니저 팩토리 생성
+    EntityManagerFactory emf = Persistence.createEntityManagerFactory("japbook");
+    EntityManager em = emf.createEntityManager(); //엔티티 메니저 생성
+    EntityTransaction tx = em.getTransaction(); //트랜잭션 기능 획득
+    
+    try{
+        tx.begin(); //트랜잭션 시작
+        logic(em); //비즈니스 로직
+        tx.commit(); //트랜잭션 커밋  
+    } catch(Exception e){
+        tx.rollback(); //트랜잭션 롤백
+    }finally{
+        em.close(); //엔티티 매니저 동료
+    }
+    emf.close(); //엔티티 매니저 팩토리 종료
+}
+```
+
+
+
+트랜잭션을 사용하는 코드는 데이터 접근 기술마다 다르다. 만약 다음 그림과 같이 JDBC 기술을 사용하고, JDBC 트팬잭션에 의존하다가 JPA 기술로 변경하게 되면 서비스 계층의 트랜잭션을 처리하는 코드도 모두 함께 변경해야 한다.
+
+
+
+##### "JDBC 트랜잭션 의존"
+
+![image](https://user-images.githubusercontent.com/76586084/188421857-735655b1-ab9e-4308-b186-9d5a74bdb8a5.png)
+
+
+
+***"JDBC 기술 :arrow_forward: JPA 기술로 변경"***
+
+![image](https://user-images.githubusercontent.com/76586084/188422464-025d6cb6-c1a6-48b0-86a2-26cb899229b7.png)
+
+이렇게 JDBC 기술을 사용하다가 JPA 기술로 변경하게 되면 서비스 계층의 코드도 JPA 기술을 사용하도록 함께 수정해야 한다.
+
+
+
+##### "트랜잭션 추상화" :framed_picture:
+
+이 문제를 해결하려면 트랜잭션 기능을 추상화하면 된다.
+아주 단순하게 생각하면 다음과 같은 인터페이스를 사용하면 된다.
+
+
+
+##### "트랜잭션 추상화 인터페이스"
+
+```java
+public interface TxManager{
+    begin();
+    commit();
+    rooback();
+}
+```
+
+트랜잭션은 사실 단순하다. 트랜잭션을 시작하고, 비즈니스 로직의 수행이 끝나면 커밋하거나 롤백하면 된다.
+
+
+
+그리고 다음과 같이 ***```TxManager```*** 인터페이스를 기반으로 각각의 기술에 맞는 구현체를 만들면 된다.
+
+- ***```JdbcTxManager```*** : JDBC 트랜잭션 기능을 제공하는 구현체
+- ***```JpaTxManager```*** : JPA 트랜잭션 기능을 제공하는 구현체
+
+
+
+##### "트랜잭션 추상화와 의존관계"
+
+![image-20220905191748123](C:\Users\user\AppData\Roaming\Typora\typora-user-images\image-20220905191748123.png)
+
+- 서비스는 특정 트랜잭션 기술에 직접 의존하는 것이 아니라, ***```TxManager```*** 라는 추상화된 인터페이스에 의존한다. 이제 원하는 구현체DI를 통해서 주입하면 된다. 예를 들어서 JDBC 트랙잭션 기능이 필요하면 ***```JdbcTxManager```*** 를 서비스에 주입하고, JPA 트랜잭션 기능으로 변경해야 하면 ***```JpaTxManager```*** 를 주입하면 된다.
+- 클라이언트인 서비스는 인터페이스에 의존하고 DI를 사용한 덕분에 OCP원칙을 지키게 되었다. 이제 트랜잭션을 사용하는 서비스 코드를 전혀 변경하지 않고, 트랜잭션 기술을 마음껏 사용할 수 있다. :open_mouth:
+
+
+
+##### 스프링의 트랜잭션 추상화
+
+스프링은 이미 이런 고민을 다 해두었다!! :speak_no_evil: 우리는 스프링이 제공하는 트랜잭션 추상화 기술을 사용하면 된다. 심지어 데이터 접근 기술에 따른 트랜잭션 구현체도 대부분 만들어두어서 가져다 사용하면 된다.
+
+![image](https://user-images.githubusercontent.com/76586084/188430680-877403d1-ce58-4482-9c81-6772806066cd.png)
+
+스프링 트랜잭션 추상화의 핵심은 ***```PlatformTransactionManager```*** 인터페이스이다.
+
+- ***```org.springframework.transaction.PlatformTransactionManager```***
+
+
+
+##### "PlatformTransactionManager"
+
+```java
+package org.springframework.transaction;
+
+public interface PlatformTransactionManager extends TransactionManager{
+    
+    TransactionStatus getTransaction(@Nullable TransactionDefinition definition)
+        throws TransactionException;
+    
+    void commit(TransactionStatus status) throws TransactionException;
+    void rollback(TransactionStatus status) throws TransactionException;
+}
+```
+
+- ***```getTransaction()```*** : 트랜잭션을 시작한다.
+  - 이름이 ***```getTransaction()```*** 인 이유는 기존에 이미 진행중인 트랜잭션이 있는 경우 해당 트랜잭션에 참여할 수 있기 때문이다.
+  - 참고로 트랜잭션 참여, 전파에 대한 부분은 뒤에서 설명한다. 지금은 단순히 트랜잭션을 시작하는 것으로 이해하면 된다.
+- ***```commit()```*** : 트랜잭션을 커밋한다.
+- ***```rollback()```***  : 트랙잭션을 롤백한다.
 
 
 
 
 
+#### "트랜잭션 동기화" :dolphin:
+
+스프링이 제공하는 트랜잭션 매니저는 크게 2가지 역할을 한다.
+
+- 트랜잭션 추상화
+- 리소스 동기화
 
 
 
+##### "트랜잭션 추상화"
+
+트랜잭션 기술을 추상화 하는 부분은 앞에서 설명했다.
 
 
 
+##### "리소스 동기화"
+
+트랜잭션을 유지하려면 트랜잭션의 시작부터 끝까지 같은 데이터베이스 커넥션을 유지해야 한다. 결국 같은 커넥션을 동기화(맞추어 사용) 하기 위해서 이전에는 파라미터로 커넥션을 전달하는 방법을 사용했다.
+
+파라미터로 커넥션을 전달하는 방법은 코드가 지저분해지는 것은 물론이고, 커넥션을 넘기는 메서드와 넘기지 않는 메서드를 중복해서 만들어야 하는 등 여러가지 단점들이 많다.
 
 
 
+##### "커넥션과 세션"
+
+![image](https://user-images.githubusercontent.com/76586084/188096832-fee7f802-62c0-41d6-bbf2-bbbf192dbe13.png)
 
 
 
+##### "트랜잭션 매니저와 트랜잭션 동기화 매니저"
+
+![image](https://user-images.githubusercontent.com/76586084/188436321-b55f4686-e2ae-40c9-8b06-1b933f02f56d.png)
+
+- 스프링은 ***"트랜잭션 동기화 매니저"*** 를 제공한다. 이것은 쓰레드 로컬```(ThreadLocal)``` 을 사용해서 커넥션을 동기화 해준다. 트랜잭션 매니저는 내부에서 이 트랜잭션 동기화 매니저를 사용한다.
+- 트랜잭션 동기화 매니저는 쓰레드 로컬을 사용하기 때문에 멀티쓰레드 상황에 안전하게 커넥션을 동기화 할 수 있다. 따라서 커넥션이 필요하면 트랜잭션 동기화 매니저를 통해 커넥션을 획득하면 된다. 따라서 이전처럼 파라미터로 커넥션을 전달하지 않아도 된다.
 
 
 
+##### "동작 방식을 간단하게 설명하면 다음과 같다" :chains:
+
+1. 트랜잭션을 시작하려면 커넥션이 필요하다. 트랜잭션 매니저는 데이터소스를 통해 커넥션을 만들고 트랜잭션을 시작한다.
+2. 트랜잭션 매니저는 트랜잭션이 시작된 커넥션을 트랜잭션 동기화 매니저에 보관한다.
+3. 리포지토리라는 트랜잭션 동기화 매니저에 보관된 커넥션을 꺼내서 사용한다. 따라서 파라미터로 커넥션을 전달하지 않아도 된다.
+4. 트랜잭션이 종료되면 트랜잭션 매니저는 트랜잭션 동기화 매니저에 보관된 커넥션을 통해 트랜잭션을 종료하고, 커넥션도 닫는다.
 
 
 
+#### 트랜잭션 문제 해결 - 트랜잭션 매니저1
+
+이제 본격적으로 애플리케이션 코드에 트랜잭션 매니저를 적용해보자.
+
+##### "MemberRepositoryV3"
+
+```java
+/**
+ * 트랜잭션 - 트랜잭션 매니저
+ * DataSourceUtils.getConnection()
+ * DataSourceUtils.releaseConnection()
+ */
+@Slf4j
+public class MemberRepositoryV3 {
+
+    private final DataSource dataSource;
+
+    public MemberRepositoryV3(DataSource dataSource) {
+        this.dataSource = dataSource;
+    }
+
+    public Member save(Member member) throws SQLException {
+        String sql = "insert into member(member_id, money) values(?,?)";
+
+        Connection con = null;
+        PreparedStatement pstmt = null;
+
+        try {
+            con = getConnection();
+            pstmt = con.prepareStatement(sql);
+            pstmt.setString(1, member.getMemberId());
+            pstmt.setInt(2, member.getMoney());
+            pstmt.executeUpdate();
+            return member;
+        } catch (SQLException e) {
+            log.error("db error", e);
+            throw e;
+        }finally{
+            close(con, pstmt, null);
+        }
+    }
+
+    public Member findById(String memberId) throws SQLException {
+        String sql = "select * from member where member_id = ?";
+
+        Connection con = null;
+        PreparedStatement pstmt = null;
+        ResultSet rs = null;
+
+        try {
+            con = getConnection();
+            pstmt = con.prepareStatement(sql);
+            pstmt.setString(1, memberId);
+            rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                Member member = new Member();
+                member.setMemberId(rs.getString("member_id"));
+                member.setMoney(rs.getInt("money"));
+                return member;
+            }else{
+                throw new NoSuchElementException("member not found memberId=" + memberId);
+            }
+        } catch (SQLException e) {
+            log.error("db error", e);
+            throw e;
+        } finally {
+            close(con, pstmt, rs);
+        }
+    }
+    
+
+    public void update(String memberId, int money) throws SQLException {
+        String sql = "update member set money = ? where member_id =?";
+        Connection con = null;
+        PreparedStatement pstmt = null;
+
+        try {
+            con = getConnection();
+            pstmt = con.prepareStatement(sql);
+            pstmt.setInt(1, money);
+            pstmt.setString(2, memberId);
+            int resultSize = pstmt.executeUpdate();
+            log.info("resultSize={}", resultSize);
+        } catch (SQLException e) {
+            log.error("db error", e);
+            throw e;
+        }finally {
+            close(con, pstmt, null);
+        }
+    }
+
+
+    public void delete(String memberId) throws SQLException {
+        String sql = "delete from member where member_id = ?";
+        Connection con = null;
+        PreparedStatement pstmt = null;
+
+        try {
+            con = getConnection();
+            pstmt = con.prepareStatement(sql);
+            pstmt.setString(1, memberId);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            log.error("db error", e);
+            throw e;
+        }finally {
+            close(con, pstmt, null);
+        }
+    }
+
+    private void close(Connection con, Statement stmt, ResultSet rs) {
+
+        JdbcUtils.closeResultSet(rs);
+        JdbcUtils.closeStatement(stmt);
+        DataSourceUtils.releaseConnection(con, dataSource);
+//        JdbcUtils.closeConnection(con);
+
+    }
+
+    private Connection getConnection() throws SQLException {
+        //주의! 트랜잭션 동기화를 사용하려면 dataSourceUtils를 사용해야 한다.
+        Connection con = DataSourceUtils.getConnection(dataSource);
+        log.info("get connection = {}. class = {}", con, con.getClass());
+
+        return con;
+    }
+
+}
+```
+
+- 커넥션을 파라미터로 전달하는 부분이 모두 제거되었다.
 
 
 
+##### "DataSourceUtils.getConnection()"
+
+- ***```getConnection()```*** 에서 ***```DataSource.getConnection()```*** 를 사용하도록 변경된 부분을 특히 주의해야 한다.
+- ***```DataSourceUtils.getConnection()```*** 는 다음과 같이 동작한다.
+  - ***"트랜잭션 동기화 매니저가 관리하는 커넥션이 있으면 항상 커넥션을 반환한다."*** 
+  - 트랜잭션 동기화 매니저가 고나리하는 커넥션이 없는 경우 새로운 커넥션을 생성해서 반환한다.
 
 
 
+##### "DataSourceUtils.releaseConnection()"
+
+- ***```close()```*** 에서 ***```DataSourceUtils.releaseConnection()```*** 를 사용하도록 변경된 부분을 특히 주의해야 한다. 커넥션을 ***```con.close()```*** 를 사용해서 직접 닫아버리면 커넥션이 유지되지 않은 문제가 발생한다. 이 커넥션은 이후 로직은 물론이고, 트랜잭션을 종료(커밋, 롤백)할 때 까지 살아있어야 한다.
+- ***```DataSourceUtils.releaseConnection()```*** 을 사용하면 커넥션을 바로 닫는 것이 아니다.
+  - "트랙잭션을 사용하기 위해 동기화된 커넥션은 커넥션을 닫지 않고 그대로 유지해준다."
+  - 트랜잭션 동기화 매니저가 관리하는 커넥션이 없는 경우 해당 커넥션을 닫는다.
 
 
 
+##### "MemberServiceV1"
 
+```java
+/**
+ * 트랜잭션 - 트랜잭션 매니저
+ */
+@Slf4j
+@RequiredArgsConstructor
+public class MemberServiceV3_1 {
 
+    //    private final DataSource dataSource;
+    private final PlatformTransactionManager transactionManager;
+    private final MemberRepositoryV3 memberRepository;
 
+    public void accountTransfer(String fromId, String toId, int money) throws SQLException {
+        //트랜잭션 시작
+        TransactionStatus status = transactionManager.getTransaction(new DefaultTransactionDefinition());
+
+        try {
+            //비즈니스 로직
+            bizLogic(fromId, toId, money);
+            transactionManager.commit(status); //성공시 커밋
+        } catch (Exception e) {
+            transactionManager.rollback(status);
+            throw new IllegalStateException();
+        } 
+
+    }
+
+    private void bizLogic(String fromId, String toId, int money) throws SQLException {
+        Member fromMember = memberRepository.findById(fromId);
+        Member toMember = memberRepository.findById(toId);
+
+        memberRepository.update(fromId, fromMember.getMoney() - money);
+        validation(toMember);
+        memberRepository.update(toId, toMember.getMoney() + money);
+    }
+
+    private void validation(Member toMember) {
+        if (toMember.getMemberId().equals("ex")) {
+            throw new IllegalStateException("이체중 예외 발생");
+        }
+    }
+
+    private void release(Connection con) {
+        if (con != null) {
+            try {
+                con.setAutoCommit(true);
+                con.close();
+            } catch (Exception e) {
+                log.info("error", e);
+            }
+        }
+    }
+}
+```
 
 
 
