@@ -1723,7 +1723,7 @@ public class MemberServiceV2 {
 
 - 트랜잭션 문제
 - 예외 누수 문제
-- JDBC 반복 무제
+- JDBC 반복 문제
 
 
 
@@ -2102,10 +2102,10 @@ public class MemberRepositoryV3 {
 
 ##### "DataSourceUtils.getConnection()"
 
-- ***```getConnection()```*** 에서 ***```DataSource.getConnection()```*** 를 사용하도록 변경된 부분을 특히 주의해야 한다.
+- ***```getConnection()```*** 에서 ***```DataSourceUtils.getConnection()```*** 를 사용하도록 변경된 부분을 특히 주의해야 한다.
 - ***```DataSourceUtils.getConnection()```*** 는 다음과 같이 동작한다.
   - ***"트랜잭션 동기화 매니저가 관리하는 커넥션이 있으면 항상 커넥션을 반환한다."*** 
-  - 트랜잭션 동기화 매니저가 고나리하는 커넥션이 없는 경우 새로운 커넥션을 생성해서 반환한다.
+  - 트랜잭션 동기화 매니저가 관리하는 커넥션이 없는 경우 새로운 커넥션을 생성해서 반환한다.
 
 
 
@@ -2118,7 +2118,7 @@ public class MemberRepositoryV3 {
 
 
 
-##### "MemberServiceV1"
+##### "MemberServiceV3_1"
 
 ```java
 /**
@@ -2143,7 +2143,224 @@ public class MemberServiceV3_1 {
         } catch (Exception e) {
             transactionManager.rollback(status);
             throw new IllegalStateException();
-        } 
+        }
+
+    }
+
+    private void bizLogic(String fromId, String toId, int money) throws SQLException {
+        Member fromMember = memberRepository.findById(fromId);
+        Member toMember = memberRepository.findById(toId);
+
+        memberRepository.update(fromId, fromMember.getMoney() - money);
+        validation(toMember);
+        memberRepository.update(toId, toMember.getMoney() + money);
+    }
+
+    private void validation(Member toMember) {
+        if (toMember.getMemberId().equals("ex")) {
+            throw new IllegalStateException("이체중 예외 발생");
+        }
+    }
+
+    private void release(Connection con) {
+        if (con != null) {
+            try {
+                con.setAutoCommit(true);
+                con.close();
+            } catch (Exception e) {
+                log.info("error", e);
+            }
+        }
+    }
+}
+```
+
+- ***```private final PlatformTransactionManager transactionManager```*** 
+  - 트랜잭션 매니저를 주입 받는다. 지금은 JDBC 기술을 사용하기 때문에 ***```DataSourceTransactionManager```*** 구현체를 주입 받아야한다.
+  - 물론 JPA 같은 기술로 변경되면 ***```JpaTransactionManager```*** 를 주입 받으면 된다.
+- ***```tranasactionManager.getTransaction()```***
+  - 트랜잭션을 시작한다.
+  - ***```TransactionStatus status```*** 를 반환한다. 현재 트랜잭션의 상태 정보가 포함되어 있다. 이후 트랜잭션을 커밋, 롤백할 때 필요하다.
+- ***```new DefaultTransactionDefinition()```***
+  - 트랜잭션과 관련된 옵션을 지정할 수 있다. 자세한 내용은 뒤에서 설명한다.
+- ***```transactionManager.commit(status)```***
+  - 트랜잭션이 성공하면 이 로직을 호출해서 커밋하면 된다.
+
+
+
+##### "MemberServiceV3_1 Test"
+
+```java
+public class MemberServiceV3_1Test {
+
+    public static final String MEMBER_A = "memberA";
+    public static final String MEMBER_B = "memberB";
+    public static final String MEMBER_EX = "ex";
+
+    private MemberRepositoryV3 memberRepository;
+    private MemberServiceV3_1 memberService;
+
+    @BeforeEach
+    void before() {
+        DriverManagerDataSource dataSource = new DriverManagerDataSource(URL, USERNAME, PASSWORD);
+        memberRepository = new MemberRepositoryV3(dataSource);
+        PlatformTransactionManager transactionManager = new DataSourceTransactionManager(dataSource);
+        memberService = new MemberServiceV3_1(transactionManager, memberRepository);
+    }
+
+    @AfterEach
+    void after() throws SQLException {
+        memberRepository.delete(MEMBER_A);
+        memberRepository.delete(MEMBER_B);
+        memberRepository.delete(MEMBER_EX);
+    }
+
+    @Test
+    @DisplayName("normal")
+    void accountTransfer() throws SQLException {
+        //given
+        Member memberA = new Member(MEMBER_A, 10000);
+        Member memberB = new Member(MEMBER_B, 10000);
+        memberRepository.save(memberA);
+        memberRepository.save(memberB);
+
+        //when
+        memberService.accountTransfer(memberA.getMemberId(), memberB.getMemberId(), 2000);
+
+        //then
+        Member findMemberA = memberRepository.findById(memberA.getMemberId());
+        Member findMemberB = memberRepository.findById(memberB.getMemberId());
+        assertThat(findMemberA.getMoney()).isEqualTo(8000);
+        assertThat(findMemberB.getMoney()).isEqualTo(12000);
+    }
+
+    @Test
+    @DisplayName("abnormal")
+    void accountTransferEx() throws SQLException {
+        //given
+        Member memberA = new Member(MEMBER_A, 10000);
+        Member memberEx = new Member(MEMBER_EX, 10000);
+        memberRepository.save(memberA);
+        memberRepository.save(memberEx);
+
+        //when
+        assertThatThrownBy(() -> memberService.accountTransfer(memberA.getMemberId(), memberEx.getMemberId(), 2000))
+                .isInstanceOf(IllegalStateException.class);
+
+        //then
+        Member findMemberA = memberRepository.findById(memberA.getMemberId());
+        Member findMemberB = memberRepository.findById(memberEx.getMemberId());
+        assertThat(findMemberA.getMoney()).isEqualTo(8000);
+        assertThat(findMemberB.getMoney()).isEqualTo(10000);
+    }
+
+}
+```
+
+##### "초기화 코드 설명"
+
+```java
+@BeforeEach
+void before(){
+	DriveManagerDataSource dataSource = new DriverManagerDataSource(URL, USERNAME, PASSWORD);
+    PlatformTransactionManager transactionManager = new DataSourceTransactionManger(dataSource);
+    
+    memberRepository = new MemberRepositoryV3(dataSource);
+    memberService = new MemberServiceV3_1(transactionManager, memberRepository);
+}
+```
+
+- ***```new DataSourceTransactionManager(dataSource)```***
+  - JDBC 기술을 사용하므로, JDBC용 트랜잭션 매니저(***```DataSourceTransactionManager```***)를 선택해서 서비스에 주입한다.
+  - 트랜잭션 매니저는 데이터소스를 통해 커넥션을 생성하므로 ***```DataSource```*** 가 필요하다.
+
+
+
+테스트 해보면 모든 결과가 정상 동작하는 것을 확인할 수 있다. 당연히 롤백 기능도 잘 동작한다.
+
+
+
+
+
+## 트랜잭션 문제 해결 - 트랜잭션 템플릿 :man_technologist:
+
+트랜잭션을 사용하는 로직을 살펴보면 다음과 같은 패턴이 반복되는 것을 확인할 수 있다.
+
+##### "트랜잭션 사용 코드"
+
+```java
+TransactionStatus status = transactionManager.getTransaction(new DefaultTransactionDefinition());
+
+try{
+    bizLogic(fromId, toId, money);
+    transactionManager.commit(status) // 성공시 커밋
+} catch(Exception e){
+    transactionManager.rollback(status);
+	throw new IllegalStatusException(e);
+}
+```
+
+- 트랜잭션을 시작하고, 비즈니스 로직을 실행하고, 성공하면 커밋하고, 예외가 발생하면 롤백한다.
+- 다른 서비스에서 트랜잭션을 시작하려면 ***```try```*** , ***```catch```*** , ***```finally```*** 를 포함한 성공시 커밋, 실패시 롤백 코드가 반복될 것이다.
+- 이런 형태는 각각의 서비스에서 반복된다. 달라지는 부분은 비즈니스 로직 뿐이다.
+- 이럴 때 템플릿 콜백 패턴을 활용하면 이런 반복 문제를 깔끔하게 해결할 수 있다.
+
+
+
+##### "트랜잭션 템플릿"
+
+템플릿 콜백 패턴을 적용하려면 템플릿을 제공하는 클래스를 작성해야 하는데, 스프링은 ***```TransactionTemplate```*** 라는 템플릿 클래스를 제공한다.
+
+
+
+##### TransactionTemplate
+
+```java
+public class TransactionTemplate{
+    
+    private PlatformTransactionManager transactionManager;
+    
+    public <T> execute(TransactionCallback<T> action){..}
+    void executeWithoutResult(Consumer<TransactionStatus> action){..}
+}
+```
+
+- ***```excute()```*** : 응답 값이 있을 때 사용한다.
+- ***```executeWithoutResult()```*** : 응답 값이 없을 때 사용한다.
+
+
+
+트랜잭션 템플릿을 사용해서 반복하는 부분을 제거해보자.
+
+
+
+##### "MemberServiceV3_2"
+
+```java
+/**
+ * 트랜잭션 - 트랜잭션 템플릿
+ */
+@Slf4j
+public class MemberServiceV3_2 {
+
+    //private final PlatformTransactionManager transactionManager;
+    private final TransactionTemplate txTemplate;
+    private final MemberRepositoryV3 memberRepository;
+
+    public MemberServiceV3_2(PlatformTransactionManager transactionManager, MemberRepositoryV3 memberRepository) {
+        this.txTemplate = new TransactionTemplate(transactionManager);
+        this.memberRepository = memberRepository;
+    }
+
+    public void accountTransfer(String fromId, String toId, int money) throws SQLException {
+
+        txTemplate.executeWithoutResult((status) -> {
+            try {
+                bizLogic(fromId, toId, money);
+            } catch (SQLException e) {
+                throw new IllegalStateException(e);
+            }
+        });
 
     }
 
@@ -2177,17 +2394,125 @@ public class MemberServiceV3_1 {
 
 
 
+##### "트랜잭션 템플릿 사용 로직"
+
+```java
+txTemplate.executeWithoutResult((status) -> {
+    try{
+        bizLogic(fromId, toId, money);
+    }catch (SQLException e){
+        throw new IllegalStateException(e);
+    }
+});
+```
+
+- 트랜잭션 템플릿 덕분에 트랜잭션을 시작하고, 커밋하거나 롤백하는 코드가 모두 제거되었다.
+- 트랜잭션 템플릿의 기본 동작은 다음과 같다.
+  - 비즈니스 로직이 정상 수행되면 커밋한다. 
+  - 언체크 예외가 발생하면 롤백한다. 그 외의 경우 커밋한다. (체크 예외의 경우에는 커밋하는데, 이 부분은 뒤에서 설명한다.)
+- 코드에서 예외를 처리하기 위해 ***```try ~ catch```*** 가 들어갔는데, ***```bizLogic()```*** 메서드를 호출하면 ***```SQLException```*** 체크 예외를 넘겨준다. 해당 람다에서 체크 예외를 밖으로 던질 수 없기 때문에 언체크 예외로 바꾸어 던지도록 예외를 전환했다.
+
+##### 
 
 
 
+#### 트랜잭션 문제 해결 - APO 이해
+
+- 지금까지 트랜잭션을 편리하게 처리하기 위해서 트랜잭션 추상화도 도입하고, 후가로 반복적인 트랜잭션 로직을 해결하기 위해 트랜잭션 템플릿도 도입했다.
+- 트랜잭션 템플릿 덕분에 트랜잭션을 처리하는 반복 코드는 해결할 수 있었다. 하지만 서비스 계층에 순수한 비즈니스 로직만 남긴다는 목표는 아직 달성하지 못했다.
+- 이럴 때 AOP를 통해 프록시를 도입하면 문제를 깔끔하게 해결할 수 있다.
 
 
 
+#### 프록시를 통한 문제 해결
+
+##### 프록시 도입전
+
+![image](https://user-images.githubusercontent.com/76586084/190644773-e8c59063-b323-4473-90cc-e66e8d3ae8e9.png)
+
+프록시를 도입하기 전에는 기존처럼 서비스의 로직에서 트랜잭션을 직접 시작한다.
 
 
 
+##### "서비스 계층의 트랜잭션 사용 코드 예시"
+
+```java
+TransactionStatus status = transactionManager.getTransaction(new DefaultTransactionDefinition());
+
+try{
+    bizLogic(fromId, toId, money);
+    transactionManager.commit(status) // 성공시 커밋
+} catch(Exception e){
+    transactionManager.rollback(status);
+	throw new IllegalStatusException(e);
+}
+```
 
 
+
+##### 프록시 도입 후
+
+![image-20220916221629429](C:\Users\user\AppData\Roaming\Typora\typora-user-images\image-20220916221629429.png)
+
+프록시를 사용하면 트랜잭션을 처리하는 객체와 비즈니스 로직을 처리하는 서비스 객체를 명확하게 분리할 수 있다.
+
+##### "트랜잭션 프록시 코드 예시"
+
+```java
+public class TransactionProxy{
+    private MemberService target;
+    
+    public void logic(){
+        TransactionStatus stauts = transactionManager.getTransaction(..);
+        try{
+            target.logic();
+            transactionManager.commit(status);
+        }catch(Exception e){
+            transactionManager.rollback(status);
+            throw new IllegalStateException(e);
+        }
+    }
+}
+```
+
+##### "트랜잭션 프록시 적용 후 서비스  코드 예시"
+
+```java
+public class Service{
+    public void logic(){
+        bizLogic(fromId, toId, money);
+    }
+}
+```
+
+- 프록시 도입 전 : 서비스에 비즈니스 로직과 트랜잭션 처리 로직이 함께 섞여있다. 
+- 프록시 도입 후 : 트랜잭션 프록시가 프랜잭션 처리 로직을 모두 가져갔다. 그리고 트랜잭션을 시작한 후에 실제 서비스를 대신 호출한다. 트랜잭션 프록시 덕분에 서비스 계층에는 순순한 비즈니스 로직을 남길 수 있다.
+
+
+
+#### 스프링이 제공하는 트랜잭션 AOP
+
+- 스프링이 제공하는 AOP 기능을 사용하면 프록시를 매우 편리하게 적용할 수있다. 
+- 물론 스프링 AOP를 직접 사용해서 트랜잭션을 처리해도 되지만 ,트랜잭션은 매우 중요한 기능이고, 전세계 누구나 다 사용하는 기능이다. 스프링은 트랜잭션 AOP를 처리하기 위한 모든 기능을 제공한다. 스프링 부트를 사용하면 트랜잭션 AOP를 처리하기 위해 필요한 스프링 빈들도 등록해준다.
+- 개발자는 트랜잭션 처리가 필요한 곳에 ***```@Transactional```*** 애노테이션만 붙여주면 된다. 스프링의 트랜잭션 AOP는 이 애노테이션을 인식해서 트랜잭션 프록시를 적용해 준다.
+
+
+
+##### ***```@Transactional```*** 
+
+***```org.springframework.transaction.annotation.Transactional```***
+
+
+
+> ##### 참고
+>
+> 스프링 AOP를 적용하려면 어드바이저, 포인트컷, 어드바이스가 필요하다. 스프링은 트랜잭션 AOP 처리를 위해 다음 클래스를 제공한다. 스프링 부트를 사용하면 해당 빈들은 스프링 컨테이너에 자동으로 등록된다. 
+>
+> 어드바이저: ***```BeanFactoryTransactionAttributeSourceAdvisor ```***
+>
+> 포인트컷: ***```TransactionAttributeSourcePointcut```***
+>
+> 어드바이스 : ***```TransactionInterceptor```***
 
 
 
