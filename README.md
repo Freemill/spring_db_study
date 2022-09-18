@@ -2518,11 +2518,171 @@ public class Service{
 
 
 
+## 트랜잭션 문제 해결 - 트랜잭션 AOP 적용
+
+트랜잭션 AOP를 사용하는 새로운 서비스 클래스를 만들자.
+
+##### "memberServiceV3_3"
+
+```java
+@Slf4j
+@RequiredArgsConstructor
+public class MemberServiceV3_3 {
+
+    private final MemberRepositoryV3 memberRepository;
+
+    @Transactional
+    public void accountTransfer(String fromId, String toId, int money) throws SQLException {
+        bizLogic(fromId, toId, money);
+    }
+
+    private void bizLogic(String fromId, String toId, int money) throws SQLException {
+        Member fromMember = memberRepository.findById(fromId);
+        Member toMember = memberRepository.findById(toId);
+
+        memberRepository.update(fromId, fromMember.getMoney() - money);
+        validation(toMember);
+        memberRepository.update(toId, toMember.getMoney() + money);
+    }
+
+    private void validation(Member toMember) {
+        if (toMember.getMemberId().equals("ex")) {
+            throw new IllegalStateException("이체중 예외 발생");
+        }
+    }
+
+}
+
+```
+
+- 순수한 비즈니스 로직만 남기고, 트랜잭션 코드는 모두 제거했다.
+- 스프링이 제공하는 트랜잭션 AOP를 적용하기 위해 ***```@Transactional```*** 애노테이션을 추가했다.
+- ***```@Transactional```*** 애노테이션은 매서드에 불어도 되고, 클래스에 붙어도 된다. 클래스에 붙이면 외부에서 호출 가능한 ***```public```*** 매서드가 AOP 적용 대상이 된다. 
 
 
 
+##### "MemberServiceV3_3Test"
+
+```java
+/**
+ * 트랜잭션 - @Transactional AOP
+ */
+@Slf4j
+@SpringBootTest
+public class MemberServiceV3_3Test {
+
+    public static final String MEMBER_A = "memberA";
+    public static final String MEMBER_B = "memberB";
+    public static final String MEMBER_EX = "ex";
+
+    @Autowired
+    private MemberRepositoryV3 memberRepository;
+    @Autowired
+    private MemberServiceV3_3 memberService;
+
+    @TestConfiguration
+    static class TestConfig {
+        @Bean
+        DataSource dataSource(){
+            return new DriverManagerDataSource(URL, USERNAME, PASSWORD);
+        }
+
+        @Bean
+        PlatformTransactionManager transactionManager(){
+            return new DataSourceTransactionManager(dataSource());
+        }
+
+        @Bean
+        MemberRepositoryV3 memberRepositoryV3(){
+            return new MemberRepositoryV3(dataSource());
+        }
+
+        @Bean
+        MemberServiceV3_3 memberServiceV3_3(){
+            return new MemberServiceV3_3(memberRepositoryV3());
+        }
+    }
 
 
+    @AfterEach
+    void after() throws SQLException {
+        memberRepository.delete(MEMBER_A);
+        memberRepository.delete(MEMBER_B);
+        memberRepository.delete(MEMBER_EX);
+    }
+
+    @Test
+    @DisplayName("normal")
+    void accountTransfer() throws SQLException {
+        //given
+        Member memberA = new Member(MEMBER_A, 10000);
+        Member memberB = new Member(MEMBER_B, 10000);
+        memberRepository.save(memberA);
+        memberRepository.save(memberB);
+
+        //when
+        memberService.accountTransfer(memberA.getMemberId(), memberB.getMemberId(), 2000);
+
+        //then
+        Member findMemberA = memberRepository.findById(memberA.getMemberId());
+        Member findMemberB = memberRepository.findById(memberB.getMemberId());
+        assertThat(findMemberA.getMoney()).isEqualTo(8000);
+        assertThat(findMemberB.getMoney()).isEqualTo(12000);
+    }
+
+    @Test
+    @DisplayName("abnormal")
+    void accountTransferEx() throws SQLException {
+        //given
+        Member memberA = new Member(MEMBER_A, 10000);
+        Member memberEx = new Member(MEMBER_EX, 10000);
+        memberRepository.save(memberA);
+        memberRepository.save(memberEx);
+
+        //when
+        assertThatThrownBy(() -> memberService.accountTransfer(memberA.getMemberId(), memberEx.getMemberId(), 2000))
+                .isInstanceOf(IllegalStateException.class);
+
+        //then
+        Member findMemberA = memberRepository.findById(memberA.getMemberId());
+        Member findMemberB = memberRepository.findById(memberEx.getMemberId());
+        assertThat(findMemberA.getMoney()).isEqualTo(10000);
+        assertThat(findMemberB.getMoney()).isEqualTo(10000);
+    }
+
+}
+```
+
+- ***```SpringBootTest```*** : 스프링 AOP를 적용하려면 스프링 컨테이너가 필요하다. 이 애노테이션이 있으면 테스트시 스프링 부트를 통해 스프링 컨테이너를 생성한다. 그리고 테스트에서 ***```@Autowired```*** 등을 통해 스프링 컨테이너가 관리하는 빈들을 사용할 수 있다. 
+- ***```@TestConfiguration```*** : 테스트 안에서 내부 설정 클래스를 만들어서 사용하면서 이 애노테이션을 붙이면, 스프링 부트가 자동으로 만들어주는 빈들에 추가로 필요한 스프링 빈들을 등록하고 테스트를 수행할 수있다.
+- ***```TestConfig```***
+  - ***```DataSource```*** : 스프링에서 기본으로 사용할 데이터 소스를 스프링 빈으로 등록한다. 추가로 트랜잭션 매니저에도 사용한다.
+  - ***```DataSourceTransactionManager```*** : 트랜잭션 매니저를 스프링 빈으로 등록한다.
+    - 스프링이 제공하는 트랜잭션 AOP는 스프링 빈에 등록된 트랜잭션 매니저를 찾아서 사용하기 떄문에 트랜잭션 매니저를 스프링 빈으로 등록해두어야 한다.
+
+
+
+##### "AOP 프록시 적용 확인"
+
+```java
+@Test
+void AopCheck(){
+    log.info("memberService class = {}", memberService.getClass());
+    log.info("memberRepository class = {}", memberRepository.getClass());
+    Assertions.assertThat(AopUtils.isAopProxy(memberService)).isTrue();
+    Assertions.assertThat(AopUtils.isAopProxy(memberRepository)).isFalse();
+}
+```
+
+##### "실행 결과 - AopCheck()"
+
+```
+memberService class = class.hello.jdbc.service.MemberServiceV3_$$EnhancerBySpringCGLIB$$...
+memberRepository class =class.hello.jdbc.repository.MemberRepositoryV3
+```
+
+- 먼저 AOP 프록시가 적용되었는지 확인해보자. ***```AopCheck()```*** 의 실행 결과를 보면 ***```memberService```*** 에 ***```EnhanceBySpringCGLIB```*** 라는 부분을 통해 프록시(CGLIB)가 적용된 것을 확인할 수 있다. ***```memberRepository```*** 에는 AOP 를 적용하지 않았기 떄문에 프록시가 적용되지 않는다.
+- 나머지 테스트 코드들을 실행해보면 트랜잭션이 정상 수행되고, 실패시 정상 롤백된 것을 확인할 수 있다.
 
 
 
